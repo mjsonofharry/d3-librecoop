@@ -487,7 +487,7 @@ public:
 	idVec3			ReadDir( int numBits ) const;
 	void			ReadString( char *buffer, int bufferSize ) const;
 	void			ReadData( void *data, int length ) const;
-	void			ReadDict( idDict &dict );
+	void			ReadDict( idDict &dict ) const;
 
 	int				ReadDeltaChar( int oldValue ) const;
 	int				ReadDeltaByte( int oldValue ) const;

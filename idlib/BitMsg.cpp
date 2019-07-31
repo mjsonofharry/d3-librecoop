@@ -966,7 +966,7 @@ void idBitMsgDelta::ReadData( void *data, int length ) const {
 idBitMsgDelta::ReadDict
 ================
 */
-void idBitMsgDelta::ReadDict( idDict &dict ) {
+void idBitMsgDelta::ReadDict( idDict &dict ) const {
 	if ( !base ) {
 		readDelta->ReadDeltaDict( dict, NULL );
 		changed = true;
