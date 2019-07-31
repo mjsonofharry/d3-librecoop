@@ -3367,10 +3367,6 @@ void idPlayer::GiveEmail( const char *emailName ) {
 
 	inventory.emails.AddUnique( emailName );
 
-	if (gameLocal.mpGame.IsGametypeCoopBased()) {
-		return; //disable this in  coop
-	}
-
 	GetPDA()->AddEmail( emailName );
 
 	if ( hud ) {
@@ -3410,10 +3406,6 @@ void idPlayer::GivePDA( const char *pdaName, idDict *item )
 		}
 	}
 
-	if (gameLocal.mpGame.IsGametypeCoopBased()) {
-		return; //No PDAs in Coop yet
-	}
-
 	if ( pdaName == NULL || *pdaName == 0 ) {
 		pdaName = "personal";
 	}
@@ -3448,7 +3440,9 @@ void idPlayer::GivePDA( const char *pdaName, idDict *item )
 			if ( !objectiveSystemOpen ) {
 				TogglePDA();
 			}
-			objectiveSystem->HandleNamedEvent( "showPDATip" );
+			if (objectiveSystem) {
+				objectiveSystem->HandleNamedEvent("showPDATip");
+			}
 			//ShowTip( spawnArgs.GetString( "text_infoTitle" ), spawnArgs.GetString( "text_firstPDA" ), true );
 		}
 
@@ -5416,6 +5410,7 @@ idPlayer::TogglePDA
 ==============
 */
 void idPlayer::TogglePDA( void ) {
+
 	if ( objectiveSystem == NULL ) {
 		return;
 	}
@@ -5637,6 +5632,18 @@ void idPlayer::PerformImpulse( int impulse ) {
 			PrevWeapon();
 			break;
 		}
+		case IMPULSE_16: {
+			// Extra PDA key without scoreboard coupling, for COOP or SP
+			if (!gameLocal.isMultiplayer || gameLocal.mpGame.IsGametypeCoopBased()) {
+				if (objectiveSystemOpen) {
+					TogglePDA();
+				}
+				else if (weapon_pda >= 0) {
+					SelectWeapon(weapon_pda, true);
+				}
+			}
+			break;
+		}
 		case IMPULSE_17: {
 			if ( gameLocal.isClient || entityNumber == gameLocal.localClientNum ) {
 				gameLocal.mpGame.ToggleReady();
@@ -5648,6 +5655,7 @@ void idPlayer::PerformImpulse( int impulse ) {
 			break;
 		}
 		case IMPULSE_19: {
+			// IMPULSE_19 is somehow tied to the scoreboard, so it cannot be used for the PDA in COOP
 			// when we're not in single player, IMPULSE_19 is used for showScores
 			// otherwise it opens the pda
 			if ( !gameLocal.isMultiplayer ) { //work here probably to enabled PDA for COOP
@@ -7822,7 +7830,7 @@ idPlayer::Event_OpenPDA
 ==================
 */
 void idPlayer::Event_OpenPDA( void ) {
-	if ( !gameLocal.isMultiplayer ) {
+	if ( !gameLocal.isMultiplayer || gameLocal.mpGame.IsGametypeCoopBased() ) {
 		TogglePDA();
 	}
 }
@@ -8200,18 +8208,17 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	//extra added for coop
 	if (gameLocal.mpGame.IsGametypeCoopBased()) {
 
-	bool shouldHide=false;
+		bool shouldHide=false;
 
-	noclip = msg.ReadBits( 1 ) != 0;
-	shouldHide = msg.ReadBits( 1 ) != 0;
-	if ( entityNumber != gameLocal.localClientNum ) {
-		if (shouldHide && !fl.hidden) {
-			Hide();
-		} else if (!shouldHide && fl.hidden) {
-			Show();
+		noclip = msg.ReadBits( 1 ) != 0;
+		shouldHide = msg.ReadBits( 1 ) != 0;
+		if ( entityNumber != gameLocal.localClientNum ) {
+			if (shouldHide && !fl.hidden) {
+				Hide();
+			} else if (!shouldHide && fl.hidden) {
+				Show();
+			}
 		}
-	}
-
 	}
 
 	// no msg reading below this
@@ -8345,6 +8352,20 @@ void idPlayer::WritePlayerStateToSnapshot( idBitMsgDelta &msg ) const {
 	for( i = 0; i < MAX_WEAPONS; i++ ) {
 		msg.WriteBits( inventory.clip[i], ASYNC_PLAYER_INV_CLIP_BITS );
 	}
+
+	msg.WriteInt(inventory.pdas.Num());
+	idStr pda;
+	for (int i = 0; i < inventory.pdas.Num(); i++) {
+		pda = inventory.pdas[i];
+		msg.WriteString(pda, MAX_STRING_CHARS);
+	}
+
+	msg.WriteInt(inventory.items.Num());
+	idDict* item;
+	for (int i = 0; i < inventory.items.Num(); i++) {
+		item = inventory.items[i];
+		msg.WriteDict(*item);
+	}
 }
 
 /*
@@ -8369,6 +8390,22 @@ void idPlayer::ReadPlayerStateFromSnapshot( const idBitMsgDelta &msg ) {
 	}
 	for( i = 0; i < MAX_WEAPONS; i++ ) {
 		inventory.clip[i] = msg.ReadBits( ASYNC_PLAYER_INV_CLIP_BITS );
+	}
+
+	int numPdas = msg.ReadInt();
+	inventory.pdas.SetNum(numPdas);
+	idStr pda;
+	for (int i = 0; i < numPdas; i++) {
+		msg.ReadString(pda.c_str, MAX_STRING_CHARS);
+		inventory.pdas[i] = pda;
+	}
+
+	int numItems = msg.ReadInt();
+	inventory.items.SetNum(numItems);
+	idDict* item;
+	for (int i = 0; i < numItems; i++) {
+		msg.ReadDict(*item);
+		inventory.items[i] = item;
 	}
 }
 
@@ -8501,6 +8538,9 @@ idPlayer::ShowTip
 void idPlayer::ShowTip( const char *title, const char *tip, bool autoHide ) {
 	if ( tipUp ) {
 		return;
+	}
+	if (!hud) {
+		return; // avoid crash in coop
 	}
 	hud->SetStateString( "tip", tip );
 	hud->SetStateString( "tiptitle", title );
